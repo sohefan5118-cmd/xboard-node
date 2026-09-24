@@ -1,0 +1,43 @@
+# Xboard Node Configuration
+# Top-level settings are inherited by all instances. Instance overrides take precedence.
+
+# ── Single node (simplest) ──
+# panel:
+#   url: "https://panel.example.com"
+#   token: "your-api-key"
+#   node_id: 1
+
+# ── Multiple instances ──
+# kernel:
+#   type: "singbox"
+# log:
+#   level: "info"
+# device_claim:
+#   enabled: true
+#   type: "redis"
+#   addr: "127.0.0.1:6379"
+#   password: ""
+#   db: 0
+#   prefix: "xboard:device-claim"
+#   ttl: 300
+# instances:
+#   - panel:
+#       url: "https://panel.example.com"
+#       token: "api-key-1"
+#       node_id: 1
+#   - panel:
+#       url: "https://panel.example.com"
+#     machine:
+#       machine_id: 2
+#       token: "machine-token-2"
+#     log:
+#       level: "debug"   # override for this instance only
+
+# Docker/systemd alternative (takes precedence over the matching YAML fields):
+#   DEVICE_CLAIM_ENABLED=true
+#   DEVICE_CLAIM_TYPE=redis
+#   DEVICE_CLAIM_ADDR=10.0.0.10:6379
+#   DEVICE_CLAIM_PASSWORD=change-me
+#   DEVICE_CLAIM_DB=0
+#   DEVICE_CLAIM_PREFIX=xboard:device-claim
+#   DEVICE_CLAIM_TTL=300
