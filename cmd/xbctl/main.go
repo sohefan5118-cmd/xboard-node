@@ -1386,6 +1386,15 @@ func runConfigInit(args []string) error {
 		seen := make(map[string]bool)
 		deduped := make([]config.Config, 0, len(instances))
 		for _, existing := range instances {
+			// A previous interrupted/hand-edited install can leave an instance
+			// whose token_env no longer exists in credentials.env. Such an
+			// instance cannot ever start, and retaining it makes adding a new
+			// instance fail validation for the whole process. Drop only these
+			// stale, credential-less instances; valid instances are preserved.
+			if !instanceHasCredential(existing, credentialsIn) {
+				fmt.Fprintf(os.Stderr, "warning: dropping stale instance %q without a usable token\n", existing.InstanceID)
+				continue
+			}
 			autoID, idErr := existing.AutoInstanceID()
 			if idErr == nil && autoID != "" {
 				existing.InstanceID = autoID
@@ -1445,6 +1454,39 @@ func runConfigInit(args []string) error {
 	fmt.Printf("INSTANCE_ID=%s\n", instanceID)
 	fmt.Printf("ENV_KEY=%s\n", envKey)
 	return nil
+}
+
+// instanceHasCredential reports whether an existing instance can be loaded by
+// the runtime. New instances are not passed here (they are appended after the
+// filter and receive their credential below).
+func instanceHasCredential(inst config.Config, credentialsPath string) bool {
+	if inst.IsStandalone() {
+		return true
+	}
+	if inst.IsMachineMode() {
+		return usableCredential(inst.Machine.Token, inst.Machine.TokenEnv, credentialsPath)
+	}
+	return usableCredential(inst.Panel.Token, inst.Panel.TokenEnv, credentialsPath)
+}
+
+func usableCredential(value, envKey, credentialsPath string) bool {
+	if strings.TrimSpace(value) != "" && value != "***" {
+		return true
+	}
+	if strings.TrimSpace(envKey) == "" || credentialsPath == "" {
+		return false
+	}
+	data, err := os.ReadFile(credentialsPath)
+	if err != nil {
+		return false
+	}
+	for _, raw := range strings.Split(string(data), "\n") {
+		key, got, ok := strings.Cut(strings.TrimSpace(raw), "=")
+		if ok && key == envKey && strings.TrimSpace(got) != "" && strings.TrimSpace(got) != "***" {
+			return true
+		}
+	}
+	return false
 }
 
 // mergeCredentials reads existing key=value credentials, adds/replaces

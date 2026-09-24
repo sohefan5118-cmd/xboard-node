@@ -26,6 +26,7 @@ prompt PANEL '面板地址 https://...: '
 [[ $PANEL =~ ^https?:// ]] || die '面板地址必须以 http:// 或 https:// 开头'
 prompt TOKEN '节点/机器 Token: ' 1
 [[ -n $TOKEN ]] || die 'Token 不能为空'
+[[ $TOKEN != '***' ]] || die 'Token 不能使用脱敏占位符 ***'
 if [[ $MODE == machine ]]; then
   prompt IDENT 'Machine ID: '
   ARG_ID=(--machine-id "$IDENT")
