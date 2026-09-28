@@ -42,6 +42,13 @@ HEALTH_PORT="${DEFAULT_HEALTH_PORT}"
 HEALTH_ENABLED=1
 RUNTIME_GOMEMLIMIT=""
 RUNTIME_GOGC=""
+DEVICE_CLAIM_ENABLED="${DEVICE_CLAIM_ENABLED:-false}"
+DEVICE_CLAIM_TYPE="${DEVICE_CLAIM_TYPE:-redis}"
+DEVICE_CLAIM_ADDR="${DEVICE_CLAIM_ADDR:-}"
+DEVICE_CLAIM_PASSWORD="${DEVICE_CLAIM_PASSWORD:-}"
+DEVICE_CLAIM_DB="${DEVICE_CLAIM_DB:-0}"
+DEVICE_CLAIM_PREFIX="${DEVICE_CLAIM_PREFIX:-xboard:device-claim}"
+DEVICE_CLAIM_TTL="${DEVICE_CLAIM_TTL:-300}"
 BINARY_SOURCE=""
 CLI_BINARY_SOURCE=""
 FORCE_RECONFIGURE=0
@@ -192,6 +199,7 @@ usage() {
     --health-port       Local health port (default: 65530, use 0 to disable)
     --gomemlimit        Runtime GOMEMLIMIT value, e.g. 256MiB
     --gogc              Runtime GOGC value, e.g. 50
+    DEVICE_CLAIM_*      Shared Redis claim settings are read from the environment
     --force-reconfigure Overwrite an existing install even if mode/target changed
     --purge             With uninstall, delete /etc/xboard-node too
     --yes, -y           Non-interactive confirmation for destructive operations
@@ -439,6 +447,22 @@ validate_install_request() {
             validate_positive_int "Machine ID" "$MACHINE_ID"
             ;;
     esac
+    validate_device_claim_request
+}
+
+validate_device_claim_request() {
+    case "${DEVICE_CLAIM_ENABLED,,}" in
+        false|0|no|off|"") DEVICE_CLAIM_ENABLED=false; return 0 ;;
+        true|1|yes|on) DEVICE_CLAIM_ENABLED=true ;;
+        *) log_error "DEVICE_CLAIM_ENABLED must be true or false"; exit 1 ;;
+    esac
+    [ -n "$DEVICE_CLAIM_ADDR" ] || { log_error "DEVICE_CLAIM_ADDR is required when claims are enabled"; exit 1; }
+    [[ "$DEVICE_CLAIM_ADDR" =~ ^[^:]+:[0-9]+$ ]] || { log_error "DEVICE_CLAIM_ADDR must be host:port"; exit 1; }
+    [ -n "$DEVICE_CLAIM_PASSWORD" ] || { log_error "DEVICE_CLAIM_PASSWORD is required when claims are enabled"; exit 1; }
+    [ "$DEVICE_CLAIM_PASSWORD" != "***" ] || { log_error "DEVICE_CLAIM_PASSWORD cannot be the redacted placeholder ***"; exit 1; }
+    [[ "$DEVICE_CLAIM_DB" =~ ^[0-9]+$ ]] || { log_error "DEVICE_CLAIM_DB must be a non-negative integer"; exit 1; }
+    [[ "$DEVICE_CLAIM_TTL" =~ ^[0-9]+$ && "$DEVICE_CLAIM_TTL" -ge 90 ]] || { log_error "DEVICE_CLAIM_TTL must be at least 90 seconds"; exit 1; }
+    [ -n "$DEVICE_CLAIM_PREFIX" ] || { log_error "DEVICE_CLAIM_PREFIX cannot be empty"; exit 1; }
 }
 
 detect_current_state() {
@@ -585,7 +609,26 @@ render_config() {
     }
 
     INSTANCE_ID=$(echo "$output" | grep '^INSTANCE_ID=' | cut -d= -f2-)
+    render_device_claim_credentials
     chmod 600 "$TMP_DIR/credentials.env"
+}
+
+render_device_claim_credentials() {
+    [ "$DEVICE_CLAIM_ENABLED" = true ] || return 0
+    local source="$TMP_DIR/credentials.env"
+    local filtered="$TMP_DIR/credentials.env.claim"
+    awk -F= '!/^(DEVICE_CLAIM_ENABLED|DEVICE_CLAIM_TYPE|DEVICE_CLAIM_ADDR|DEVICE_CLAIM_PASSWORD|DEVICE_CLAIM_DB|DEVICE_CLAIM_PREFIX|DEVICE_CLAIM_TTL)=/' "$source" > "$filtered"
+    {
+        printf 'DEVICE_CLAIM_ENABLED=true\n'
+        printf 'DEVICE_CLAIM_TYPE=%s\n' "$DEVICE_CLAIM_TYPE"
+        printf 'DEVICE_CLAIM_ADDR=%s\n' "$DEVICE_CLAIM_ADDR"
+        printf 'DEVICE_CLAIM_PASSWORD=%s\n' "$DEVICE_CLAIM_PASSWORD"
+        printf 'DEVICE_CLAIM_DB=%s\n' "$DEVICE_CLAIM_DB"
+        printf 'DEVICE_CLAIM_PREFIX=%s\n' "$DEVICE_CLAIM_PREFIX"
+        printf 'DEVICE_CLAIM_TTL=%s\n' "$DEVICE_CLAIM_TTL"
+    } >> "$filtered"
+    chmod 600 "$filtered"
+    mv -f "$filtered" "$source"
 }
 
 render_service() {

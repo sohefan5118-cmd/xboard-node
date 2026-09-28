@@ -55,6 +55,18 @@ say '测试共享 Redis 连通性...'
 PONG=$(redis-cli --no-auth-warning -h "${REDIS_ADDR%:*}" -p "${REDIS_ADDR##*:}" -a "$REDIS_PASS" PING 2>/dev/null || true)
 [[ $PONG == PONG ]] || die "Redis 测试失败：$PONG（检查 A 的监听、防火墙、地址和密码）"
 
+# Pass Claim settings into the official installer before it renders config and
+# starts systemd. The official installer writes them into the staged
+# credentials.env atomically, so there is no window where the service runs
+# without Claim settings and no second restart that can interrupt traffic.
+export DEVICE_CLAIM_ENABLED=true
+export DEVICE_CLAIM_TYPE=redis
+export DEVICE_CLAIM_ADDR="$REDIS_ADDR"
+export DEVICE_CLAIM_PASSWORD="$REDIS_PASS"
+export DEVICE_CLAIM_DB=0
+export DEVICE_CLAIM_PREFIX="$CLAIM_PREFIX"
+export DEVICE_CLAIM_TTL="$CLAIM_TTL"
+
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 say '下载并执行官方安装器...'
@@ -62,34 +74,17 @@ curl --fail --proto '=https' --tlsv1.2 -fsSL \
   "$INSTALLER_URL" \
   -o "$TMP/install.sh"
 chmod 700 "$TMP/install.sh"
-bash "$TMP/install.sh" --mode "$MODE" --panel "$PANEL" --token "$TOKEN" "${ARG_ID[@]}" --yes
+RELEASE_VERSION=${RELEASE_VERSION:-dev}
+bash "$TMP/install.sh" --mode "$MODE" --panel "$PANEL" --token "$TOKEN" "${ARG_ID[@]}" --version "$RELEASE_VERSION" --yes
 
 CRED=/etc/xboard-node/credentials.env
 [[ -f $CRED ]] || die "安装完成但找不到 $CRED"
 chmod 600 "$CRED"
-# 删除旧值后追加，重复执行本脚本不会产生重复配置。
-tmp_cred=$(mktemp "${CRED}.XXXXXX")
-chmod 600 "$tmp_cred"
-awk -F= '!/^(DEVICE_CLAIM_ENABLED|DEVICE_CLAIM_TYPE|DEVICE_CLAIM_ADDR|DEVICE_CLAIM_PASSWORD|DEVICE_CLAIM_DB|DEVICE_CLAIM_PREFIX|DEVICE_CLAIM_TTL)=/' "$CRED" >"$tmp_cred"
-cat >>"$tmp_cred" <<EOF
-DEVICE_CLAIM_ENABLED=true
-DEVICE_CLAIM_TYPE=redis
-DEVICE_CLAIM_ADDR=$REDIS_ADDR
-DEVICE_CLAIM_PASSWORD=$REDIS_PASS
-DEVICE_CLAIM_DB=0
-DEVICE_CLAIM_PREFIX=$CLAIM_PREFIX
-DEVICE_CLAIM_TTL=$CLAIM_TTL
-EOF
-mv -f "$tmp_cred" "$CRED"
-chmod 600 "$CRED"
-
-systemctl daemon-reload
-systemctl restart xboard-node.service
-sleep 2
-systemctl is-active --quiet xboard-node.service || {
-  journalctl -u xboard-node.service -n 50 --no-pager
-  die 'xboard-node 启动失败'
-}
+grep -q '^DEVICE_CLAIM_ENABLED=true$' "$CRED" || die '安装完成但 Claim 配置未写入'
+grep -q '^DEVICE_CLAIM_PASSWORD=' "$CRED" || die '安装完成但 Claim 密码未写入'
+claim_password=$(sed -n 's/^DEVICE_CLAIM_PASSWORD=//p' "$CRED")
+[[ -n $claim_password && $claim_password != '***' ]] || die '安装完成但 Claim 密码是空值或脱敏占位符'
+systemctl is-active --quiet xboard-node.service || die 'xboard-node 安装后未运行'
 
 say '安装成功'
 echo "面板: $PANEL"
