@@ -74,7 +74,7 @@ curl --fail --proto '=https' --tlsv1.2 -fsSL \
   "$INSTALLER_URL" \
   -o "$TMP/install.sh"
 chmod 700 "$TMP/install.sh"
-RELEASE_VERSION=${RELEASE_VERSION:-dev}
+RELEASE_VERSION=${RELEASE_VERSION:-v1.13-ipv4}
 bash "$TMP/install.sh" --mode "$MODE" --panel "$PANEL" --token "$TOKEN" "${ARG_ID[@]}" --version "$RELEASE_VERSION" --yes
 
 CRED=/etc/xboard-node/credentials.env
