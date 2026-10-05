@@ -524,6 +524,21 @@ func TestBuildConfig(t *testing.T) {
 		t.Fatalf("inbounds: got %d, want 1", len(inbounds))
 	}
 	assertMapValue(t, inbounds[0], "type", "shadowsocks")
+
+	dnsCfg := cfg["dns"].(M)
+	assertMapValue(t, dnsCfg, "final", "local")
+	assertMapValue(t, dnsCfg, "strategy", "prefer_ipv4")
+	dnsServers := dnsCfg["servers"].([]M)
+	if len(dnsServers) != 1 {
+		t.Fatalf("dns servers: got %d, want 1", len(dnsServers))
+	}
+	assertMapValue(t, dnsServers[0], "type", "local")
+	assertMapValue(t, dnsServers[0], "tag", "local")
+
+	routeCfg := cfg["route"].(M)
+	resolver := routeCfg["default_domain_resolver"].(M)
+	assertMapValue(t, resolver, "server", "local")
+	assertMapValue(t, resolver, "strategy", "prefer_ipv4")
 }
 
 func TestBuildConfig_OutboundPriority(t *testing.T) {

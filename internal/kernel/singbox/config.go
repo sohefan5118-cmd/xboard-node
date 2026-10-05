@@ -50,6 +50,18 @@ func buildConfig(kcfg config.KernelConfig, nc *model.NodeSpec, users []model.Use
 			"level":     kcfg.LogLevel,
 			"timestamp": true,
 		},
+		// The node does not have IPv6 connectivity. Resolve domain targets with
+		// IPv4 preferred so an unreachable AAAA route cannot win the outbound
+		// connection race. Keep IPv6 available as a fallback for future hosts
+		// that may gain IPv6 connectivity.
+		"dns": M{
+			"servers": []M{{
+				"type": "local",
+				"tag":  "local",
+			}},
+			"final":    "local",
+			"strategy": "prefer_ipv4",
+		},
 		"outbounds": outbounds,
 	}
 
@@ -60,6 +72,12 @@ func buildConfig(kcfg config.KernelConfig, nc *model.NodeSpec, users []model.Use
 
 	// Merge panel routes and static config routes
 	cfg["route"] = buildRoutes(nc.Routes, nc.CustomRouteRules, mergeRouteList(nc.CustomRoutes, kcfg.CustomRoute))
+	// Apply the same address-family preference when sing-box resolves a
+	// domain directly from an outbound request.
+	cfg["route"].(M)["default_domain_resolver"] = M{
+		"server":   "local",
+		"strategy": "prefer_ipv4",
+	}
 
 	// Automatically enable rule_set caching (cache_file) when panel routes
 	// reference geoip:/geosite: entries so that the downloaded .srs rule_set
@@ -74,6 +92,22 @@ func buildConfig(kcfg config.KernelConfig, nc *model.NodeSpec, users []model.Use
 	}
 
 	mergeCustomSingbox(cfg, kcfg)
+	// The node has no IPv6 route. Preserve any custom DNS servers/routes, but
+	// force the address-family preference after custom merging so an optional
+	// local override cannot reintroduce the failing IPv6-first behavior.
+	if dnsCfg, ok := cfg["dns"].(M); ok {
+		dnsCfg["strategy"] = "prefer_ipv4"
+	}
+	if routeCfg, ok := cfg["route"].(M); ok {
+		if resolver, ok := routeCfg["default_domain_resolver"].(M); ok {
+			resolver["strategy"] = "prefer_ipv4"
+		} else {
+			routeCfg["default_domain_resolver"] = M{
+				"server":   "local",
+				"strategy": "prefer_ipv4",
+			}
+		}
+	}
 	return cfg
 }
 
