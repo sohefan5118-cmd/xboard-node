@@ -52,6 +52,7 @@ DEVICE_CLAIM_TTL="${DEVICE_CLAIM_TTL:-300}"
 BINARY_SOURCE=""
 CLI_BINARY_SOURCE=""
 FORCE_RECONFIGURE=0
+REPLACE_EXISTING=0
 PURGE=0
 YES=0
 ARCH=""
@@ -201,6 +202,7 @@ usage() {
     --gogc              Runtime GOGC value, e.g. 50
     DEVICE_CLAIM_*      Shared Redis claim settings are read from the environment
     --force-reconfigure Overwrite an existing install even if mode/target changed
+    --replace-existing  Rebuild config as a single requested instance, dropping old instances
     --purge             With uninstall, delete /etc/xboard-node too
     --yes, -y           Non-interactive confirmation for destructive operations
 
@@ -275,6 +277,10 @@ parse_args() {
                 ;;
             --force-reconfigure)
                 FORCE_RECONFIGURE=1
+                shift
+                ;;
+            --replace-existing)
+                REPLACE_EXISTING=1
                 shift
                 ;;
             --purge)
@@ -581,10 +587,10 @@ render_config() {
         --meta "$TMP_DIR/install-meta.json"
         --install-root "$INSTALL_ROOT"
     )
-    if [ -f "$CONFIG_FILE" ]; then
+    if [ -f "$CONFIG_FILE" ] && [ "$REPLACE_EXISTING" -eq 0 ]; then
         init_args+=(--config "$CONFIG_FILE")
     fi
-    if [ -f "$CREDENTIALS_FILE" ]; then
+    if [ -f "$CREDENTIALS_FILE" ] && [ "$REPLACE_EXISTING" -eq 0 ]; then
         init_args+=(--credentials-in "$CREDENTIALS_FILE")
     fi
     if [ "$MODE" = "machine" ]; then
