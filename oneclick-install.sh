@@ -45,7 +45,7 @@ prompt CLAIM_TTL 'Claim TTL 秒 [300]: '
 CLAIM_TTL=${CLAIM_TTL:-300}
 [[ $CLAIM_TTL =~ ^[0-9]+$ && $CLAIM_TTL -ge 90 ]] || die 'TTL 必须是不小于 90 的数字'
 : "${CLAIM_PREFIX:=xboard:device-claim}"
-: "${REPLACE_EXISTING:=0}"
+: "${REPLACE_EXISTING:=1}"
 : "${INSTALLER_URL:=https://raw.githubusercontent.com/sohefan5118-cmd/xboard-node/dev/install.sh}"
 
 export DEBIAN_FRONTEND=noninteractive
@@ -79,6 +79,8 @@ RELEASE_VERSION=${RELEASE_VERSION:-v1.13-ipv4}
 REPLACE_ARGS=()
 if [[ $REPLACE_EXISTING == 1 ]]; then
   REPLACE_ARGS+=(--replace-existing)
+else
+  REPLACE_ARGS+=(--keep-existing)
 fi
 bash "$TMP/install.sh" --mode "$MODE" --panel "$PANEL" --token "$TOKEN" "${ARG_ID[@]}" --version "$RELEASE_VERSION" --yes "${REPLACE_ARGS[@]}"
 

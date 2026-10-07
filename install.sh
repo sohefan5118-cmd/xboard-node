@@ -52,7 +52,7 @@ DEVICE_CLAIM_TTL="${DEVICE_CLAIM_TTL:-300}"
 BINARY_SOURCE=""
 CLI_BINARY_SOURCE=""
 FORCE_RECONFIGURE=0
-REPLACE_EXISTING=0
+REPLACE_EXISTING=1
 PURGE=0
 YES=0
 ARCH=""
@@ -203,6 +203,7 @@ usage() {
     DEVICE_CLAIM_*      Shared Redis claim settings are read from the environment
     --force-reconfigure Overwrite an existing install even if mode/target changed
     --replace-existing  Rebuild config as a single requested instance, dropping old instances
+    --keep-existing     Preserve valid existing instances when adding this target
     --purge             With uninstall, delete /etc/xboard-node too
     --yes, -y           Non-interactive confirmation for destructive operations
 
@@ -281,6 +282,10 @@ parse_args() {
                 ;;
             --replace-existing)
                 REPLACE_EXISTING=1
+                shift
+                ;;
+            --keep-existing)
+                REPLACE_EXISTING=0
                 shift
                 ;;
             --purge)
