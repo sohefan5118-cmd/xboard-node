@@ -50,11 +50,30 @@ CLAIM_TTL=${CLAIM_TTL:-300}
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq curl ca-certificates redis-tools >/dev/null
+apt-get install -y -qq curl ca-certificates redis-tools python3-minimal >/dev/null
 
 say '测试共享 Redis 连通性...'
 PONG=$(redis-cli --no-auth-warning -h "${REDIS_ADDR%:*}" -p "${REDIS_ADDR##*:}" -a "$REDIS_PASS" PING 2>/dev/null || true)
 [[ $PONG == PONG ]] || die "Redis 测试失败：$PONG（检查 A 的监听、防火墙、地址和密码）"
+
+# Validate the panel/machine/token tuple before the official installer stages
+# or replaces any local configuration. A panel 403 must never take the node
+# through a stop/start followed by rollback of a previously healthy setup.
+if [[ $MODE == machine ]]; then
+  PREFLIGHT_BODY=$(mktemp)
+  PREFLIGHT_STATUS=$(curl --silent --show-error --output "$PREFLIGHT_BODY" \
+    --write-out '%{http_code}' --connect-timeout 10 --max-time 30 \
+    --header 'Content-Type: application/json' \
+    --data "{\"token\":$(printf '%s' "$TOKEN" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'),\"machine_id\":$IDENT}" \
+    "$PANEL/api/v2/server/machine/nodes" || true)
+  rm -f "$PREFLIGHT_BODY"
+  case "$PREFLIGHT_STATUS" in
+    200) ;;
+    401|403) die "面板预检失败：Machine $IDENT 不存在、已禁用，或 Token 与该面板/Machine 不匹配；本机配置未修改" ;;
+    '') die '面板预检失败：无法连接面板；本机配置未修改' ;;
+    *) die "面板预检失败：HTTP $PREFLIGHT_STATUS；本机配置未修改" ;;
+  esac
+fi
 
 # Pass Claim settings into the official installer before it renders config and
 # starts systemd. The official installer writes them into the staged
