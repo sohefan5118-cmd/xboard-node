@@ -70,7 +70,7 @@ if [[ $MODE == machine ]]; then
   case "$PREFLIGHT_STATUS" in
     200) ;;
     401|403) die "面板预检失败：Machine $IDENT 不存在、已禁用，或 Token 与该面板/Machine 不匹配；本机配置未修改" ;;
-    '') die '面板预检失败：无法连接面板；本机配置未修改' ;;
+    000|'') die '面板预检失败：无法连接面板；本机配置未修改' ;;
     *) die "面板预检失败：HTTP $PREFLIGHT_STATUS；本机配置未修改" ;;
   esac
 fi
