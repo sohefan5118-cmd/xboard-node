@@ -52,7 +52,7 @@ DEVICE_CLAIM_TTL="${DEVICE_CLAIM_TTL:-300}"
 BINARY_SOURCE=""
 CLI_BINARY_SOURCE=""
 FORCE_RECONFIGURE=0
-REPLACE_EXISTING=1
+REPLACE_EXISTING=0
 PURGE=0
 YES=0
 ARCH=""
@@ -202,8 +202,8 @@ usage() {
     --gogc              Runtime GOGC value, e.g. 50
     DEVICE_CLAIM_*      Shared Redis claim settings are read from the environment
     --force-reconfigure Overwrite an existing install even if mode/target changed
-    --replace-existing  Rebuild config as a single requested instance, dropping old instances
-    --keep-existing     Preserve valid existing instances when adding this target
+    --keep-existing     Preserve valid existing instances when adding this target (default)
+    --replace-existing  Destructive: rebuild config as a single requested instance, dropping old instances
     --purge             With uninstall, delete /etc/xboard-node too
     --yes, -y           Non-interactive confirmation for destructive operations
 
@@ -592,6 +592,10 @@ render_config() {
         --meta "$TMP_DIR/install-meta.json"
         --install-root "$INSTALL_ROOT"
     )
+    # Preserve existing instances by default. Re-installs and adding a new
+    # node/machine must not silently drop other instances already served by
+    # this host. Only --replace-existing is allowed to rebuild a single-target
+    # config from scratch.
     if [ -f "$CONFIG_FILE" ] && [ "$REPLACE_EXISTING" -eq 0 ]; then
         init_args+=(--config "$CONFIG_FILE")
     fi
