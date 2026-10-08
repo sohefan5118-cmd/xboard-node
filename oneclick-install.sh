@@ -77,7 +77,9 @@ curl --fail --proto '=https' --tlsv1.2 -fsSL \
   "$INSTALLER_URL" \
   -o "$TMP/install.sh"
 chmod 700 "$TMP/install.sh"
-RELEASE_VERSION=${RELEASE_VERSION:-v1.13-ipv4}
+# v1.13-ipv4 predates multi-instance preservation; dev contains the
+# merge-safe xboard-node and xbctl artifacts.
+RELEASE_VERSION=${RELEASE_VERSION:-dev}
 REPLACE_ARGS=()
 if [[ $REPLACE_EXISTING == 1 ]]; then
   REPLACE_ARGS+=(--replace-existing)

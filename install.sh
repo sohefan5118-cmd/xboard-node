@@ -24,7 +24,9 @@ DEFAULT_HEALTH_PORT=65530
 DEFAULT_KERNEL="singbox"
 DEFAULT_MODE="node"
 DEFAULT_ACTION="install"
-DEFAULT_RELEASE_VERSION="v1.13-ipv4"
+# The merge-safe xbctl and installer artifacts are published by the dev
+# release. The old v1.13-ipv4 release predates multi-instance preservation.
+DEFAULT_RELEASE_VERSION="dev"
 DEFAULT_LOG_LEVEL="info"
 DEFAULT_KERNEL_LOG_LEVEL="warn"
 DEFAULT_DOWNLOAD_BASE="https://github.com/sohefan5118-cmd/xboard-node/releases"
@@ -622,6 +624,19 @@ render_config() {
         log_error "xbctl config init failed"
         exit 1
     }
+
+    # A stale xbctl from an old release can silently turn a multi-instance
+    # host into a single-instance host. Refuse to install that result.
+    if [ -f "$CONFIG_FILE" ] && [ "$REPLACE_EXISTING" -eq 0 ]; then
+        local existing_count generated_count
+        existing_count=$(grep -Ec '^[[:space:]]*- id:' "$CONFIG_FILE" || true)
+        generated_count=$(grep -Ec '^[[:space:]]*- id:' "$TMP_DIR/config.yml" || true)
+        if [ "$existing_count" -gt 1 ] && [ "$generated_count" -lt "$existing_count" ]; then
+            log_error "Refusing to replace ${existing_count} existing instances with ${generated_count}; downloaded xbctl is not merge-safe"
+            log_error "Use the dev release or --binary/--xbctl-binary with merge-capable artifacts"
+            exit 1
+        fi
+    fi
 
     INSTANCE_ID=$(echo "$output" | grep '^INSTANCE_ID=' | cut -d= -f2-)
     render_device_claim_credentials
