@@ -238,6 +238,7 @@ func LoadRoot(path string) (*RootConfig, error) {
 
 	rc.applyEnvOverrides()
 	rc.resolveEnvRefs()
+	rc.resolveCredentialFileRefs(path)
 
 	// Compute stable instance IDs early — they're content-based (derived from
 	// panel URL + machine/node ID), so reordering instances in the YAML doesn't
@@ -273,6 +274,49 @@ func (rc *RootConfig) resolveEnvRefs() {
 	}
 	for i := range rc.Instances {
 		rc.Instances[i].resolveEnvRefs()
+	}
+}
+
+// resolveCredentialFileRefs provides a runtime fallback for installations
+// that keep token_env values in the sibling credentials.env file. Normally
+// systemd loads that file into the process environment, but reading the
+// protected file here also makes direct execution and older systemd setups
+// behave consistently without putting tokens in config.yml.
+func (rc *RootConfig) resolveCredentialFileRefs(configPath string) {
+	credentialsPath := filepath.Join(filepath.Dir(configPath), "credentials.env")
+	data, err := os.ReadFile(credentialsPath)
+	if err != nil {
+		return
+	}
+	values := make(map[string]string)
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if ok && strings.TrimSpace(key) != "" {
+			values[strings.TrimSpace(key)] = strings.TrimSpace(value)
+		}
+	}
+	resolve := func(c *Config) {
+		if c.Panel.Token == "" && c.Panel.TokenEnv != "" {
+			if value := values[c.Panel.TokenEnv]; value != "" && value != "***" {
+				c.Panel.Token = value
+			}
+		}
+		if c.Machine != nil && c.Machine.Token == "" && c.Machine.TokenEnv != "" {
+			if value := values[c.Machine.TokenEnv]; value != "" && value != "***" {
+				c.Machine.Token = value
+			}
+		}
+	}
+	if len(rc.Instances) == 0 {
+		resolve(&rc.Config)
+		return
+	}
+	for i := range rc.Instances {
+		resolve(&rc.Instances[i])
 	}
 }
 

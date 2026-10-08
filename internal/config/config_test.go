@@ -356,7 +356,6 @@ kernel:
 	}
 }
 
-
 func TestLoadRoot_LegacyConfigNormalizesToSingleInstance(t *testing.T) {
 	path := writeTemp(t, `
 panel:
@@ -421,6 +420,36 @@ instances:
 	}
 	if instances[0].InstanceID == instances[1].InstanceID {
 		t.Fatal("expected unique instance ids")
+	}
+}
+
+func TestLoadRoot_ResolvesTokenEnvFromSiblingCredentialsFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	if err := os.WriteFile(path, []byte(`instances:
+  - panel:
+      url: "https://panel.example.com"
+    machine:
+      machine_id: 8
+      token_env: "MACHINE_TOKEN"
+    kernel:
+      type: singbox
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "credentials.env"), []byte("MACHINE_TOKEN=machine-file-token\n"), 0o600); err != nil {
+		t.Fatalf("write credentials: %v", err)
+	}
+	t.Setenv("MACHINE_TOKEN", "")
+	root, err := LoadRoot(path)
+	if err != nil {
+		t.Fatalf("LoadRoot: %v", err)
+	}
+	if len(root.Instances) != 1 || root.Instances[0].Machine == nil {
+		t.Fatalf("instances: %+v", root.Instances)
+	}
+	if got := root.Instances[0].Machine.Token; got != "machine-file-token" {
+		t.Fatalf("machine token: got %q", got)
 	}
 }
 
