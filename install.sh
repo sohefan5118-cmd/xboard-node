@@ -682,6 +682,15 @@ validate_staged_credentials() {
     done < <(sed -nE 's/^[[:space:]]*token_env:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' "$TMP_DIR/config.yml" | sort -u)
     [ "$missing" -eq 0 ] || { log_error "Refusing to replace live installation with incomplete credentials"; exit 1; }
 
+    # Validate the exact staged files with the exact binary that will be
+    # installed. Text checks above cannot catch parser/normalization failures
+    # or a token_env that the runtime still cannot resolve.
+    if ! "$TMP_DIR/xboard-node" -c "$TMP_DIR/config.yml" --check-config >/dev/null 2>&1; then
+        log_error "Staged config and credentials failed xboard-node runtime validation"
+        "$TMP_DIR/xboard-node" -c "$TMP_DIR/config.yml" --check-config || true
+        exit 1
+    fi
+
     # A valid multi-instance config must have a credential reference for every
     # panel or machine instance. This catches the old xbctl artifact that
     # emitted machine.token without token_env before systemd is touched.

@@ -28,6 +28,7 @@ var (
 func main() {
 	configPath := flag.String("c", "config.yml", "config file path")
 	showVersion := flag.Bool("v", false, "show version")
+	checkConfig := flag.Bool("check-config", false, "validate config and credential references, then exit")
 	flag.Parse()
 
 	if *showVersion {
@@ -39,6 +40,15 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
 		os.Exit(1)
+	}
+	if *checkConfig {
+		instances, err := rootCfg.NormalizeInstances()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to normalize config: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("valid config: %d instance(s)\n", len(instances))
+		os.Exit(0)
 	}
 
 	instances, err := rootCfg.NormalizeInstances()
