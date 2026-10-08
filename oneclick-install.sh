@@ -72,6 +72,9 @@ export DEVICE_CLAIM_TTL="$CLAIM_TTL"
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
+TOKEN_FILE="$TMP/token"
+printf '%s\n' "$TOKEN" > "$TOKEN_FILE"
+chmod 600 "$TOKEN_FILE"
 say '下载并执行官方安装器...'
 curl --fail --proto '=https' --tlsv1.2 -fsSL \
   "$INSTALLER_URL" \
@@ -86,7 +89,7 @@ if [[ $REPLACE_EXISTING == 1 ]]; then
 else
   REPLACE_ARGS+=(--keep-existing)
 fi
-bash "$TMP/install.sh" --mode "$MODE" --panel "$PANEL" --token "$TOKEN" "${ARG_ID[@]}" --version "$RELEASE_VERSION" --yes "${REPLACE_ARGS[@]}"
+bash "$TMP/install.sh" --mode "$MODE" --panel "$PANEL" --token-file "$TOKEN_FILE" "${ARG_ID[@]}" --version "$RELEASE_VERSION" --yes "${REPLACE_ARGS[@]}"
 
 CRED=/etc/xboard-node/credentials.env
 [[ -f $CRED ]] || die "安装完成但找不到 $CRED"

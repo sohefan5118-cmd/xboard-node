@@ -35,6 +35,7 @@ ACTION="${DEFAULT_ACTION}"
 MODE=""
 PANEL_URL=""
 TOKEN=""
+TOKEN_FILE=""
 NODE_ID=""
 NODE_TYPE=""
 MACHINE_ID=""
@@ -186,6 +187,7 @@ usage() {
   REQUIRED FOR NODE MODE:
     --panel, -a      Panel URL
     --token, -t      Panel server token
+    --token-file      Read the panel/machine token from a protected file
     --node-id, -n    Node ID
 
   REQUIRED FOR MACHINE MODE:
@@ -236,6 +238,10 @@ parse_args() {
                 ;;
             --token|-t)
                 TOKEN="$2"
+                shift 2
+                ;;
+            --token-file)
+                TOKEN_FILE="$2"
                 shift 2
                 ;;
             --node-id|-n)
@@ -434,12 +440,18 @@ validate_install_request() {
         log_error "Panel URL is required"
         exit 1
     fi
-    if [ -z "$TOKEN" ]; then
-        log_error "Token is required"
-        exit 1
+    if [ -n "$TOKEN_FILE" ]; then
+        [ -f "$TOKEN_FILE" ] || { log_error "Token file not found: $TOKEN_FILE"; exit 1; }
+        local token_mode
+        token_mode=$(stat -c '%a' "$TOKEN_FILE" 2>/dev/null || echo 999)
+        [[ "$token_mode" =~ ^(400|600)$ ]] || {
+            log_error "Token file must have mode 400 or 600: $TOKEN_FILE"
+            exit 1
+        }
+        TOKEN=$(cat "$TOKEN_FILE")
     fi
-    if [ "$TOKEN" = "***" ]; then
-        log_error "Token cannot be the redacted placeholder ***"
+    if [ -z "$TOKEN" ] || [ "$TOKEN" = "***" ]; then
+        log_error "A usable token or --token-file is required"
         exit 1
     fi
     if ! [[ "$HEALTH_PORT" =~ ^[0-9]+$ ]]; then
@@ -591,13 +603,17 @@ render_config() {
         --panel-url "$PANEL_URL"
         --kernel "${KERNEL_TYPE:-singbox}"
         --health-port "${HEALTH_PORT:-0}"
-        --token "$TOKEN"
         --version "$RELEASE_VERSION"
         --output "$TMP_DIR/config.yml"
         --credentials-out "$TMP_DIR/credentials.env"
         --meta "$TMP_DIR/install-meta.json"
         --install-root "$INSTALL_ROOT"
     )
+    if [ -n "$TOKEN_FILE" ]; then
+        init_args+=(--token-file "$TOKEN_FILE")
+    else
+        init_args+=(--token "$TOKEN")
+    fi
     # Preserve existing instances by default. Re-installs and adding a new
     # node/machine must not silently drop other instances already served by
     # this host. Only --replace-existing is allowed to rebuild a single-target
@@ -663,8 +679,17 @@ validate_staged_credentials() {
             log_error "Staged credentials missing usable value for token_env=${key}"
             missing=1
         fi
-    done < <(awk -F: '/token_env:/ {v=$2; gsub(/[[:space:]\"'"'"']/ , "", v); if (v != "") print v}' "$TMP_DIR/config.yml" | sort -u)
+    done < <(sed -nE 's/^[[:space:]]*token_env:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' "$TMP_DIR/config.yml" | sort -u)
     [ "$missing" -eq 0 ] || { log_error "Refusing to replace live installation with incomplete credentials"; exit 1; }
+
+    # A valid multi-instance config must have a credential reference for every
+    # panel or machine instance. This catches the old xbctl artifact that
+    # emitted machine.token without token_env before systemd is touched.
+    if grep -Eq '^[[:space:]]*(panel:|machine:)' "$TMP_DIR/config.yml" &&
+       ! grep -Eq '^[[:space:]]+token_env:[[:space:]]*"?[^"[:space:]]+' "$TMP_DIR/config.yml"; then
+        log_error "Refusing staged config: no usable token_env references found"
+        exit 1
+    fi
 }
 
 render_device_claim_credentials() {

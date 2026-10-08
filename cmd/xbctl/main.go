@@ -1229,6 +1229,7 @@ func runConfigInit(args []string) error {
 		gogc           int
 		installRoot    string
 		token          string
+		tokenFile      string
 		releaseVersion string
 	)
 
@@ -1301,6 +1302,9 @@ func runConfigInit(args []string) error {
 		case "--token":
 			i++
 			token = args[i]
+		case "--token-file":
+			i++
+			tokenFile = args[i]
 		case "--version":
 			i++
 			releaseVersion = args[i]
@@ -1318,6 +1322,16 @@ func runConfigInit(args []string) error {
 	}
 	if mode == "machine" && machineID <= 0 {
 		return errors.New("--machine-id is required for machine mode")
+	}
+	if tokenFile != "" {
+		data, readErr := os.ReadFile(tokenFile)
+		if readErr != nil {
+			return fmt.Errorf("read --token-file: %w", readErr)
+		}
+		token = strings.TrimSpace(string(data))
+	}
+	if strings.TrimSpace(token) == "" || token == "***" {
+		return errors.New("a usable --token or --token-file is required")
 	}
 
 	// Build the new instance.

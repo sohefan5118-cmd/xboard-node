@@ -164,7 +164,7 @@ node_type_for(){
 }
 
 install_node(){
-  local role="${1:-${XBOARD_ROLE:-node}}" mode ident token installer node_type
+  local role="${1:-${XBOARD_ROLE:-node}}" mode ident token installer node_type token_file
   [[ $role =~ ^(A|B|C|D|node)$ ]] || die "无效角色: $role"
   mode=$(node_mode_for "$role"); ident=$(node_id_for "$role"); node_type=$(node_type_for "$role")
   [[ $mode == node || $mode == machine ]] || die "$role: MODE 必须为 node 或 machine"
@@ -186,10 +186,17 @@ install_node(){
   export DEVICE_CLAIM_DB=0
   export DEVICE_CLAIM_PREFIX="$CLAIM_PREFIX"
   export DEVICE_CLAIM_TTL="$CLAIM_TTL"
-  local args=(--mode "$mode" --panel "$PANEL_URL" --token "$token" --kernel singbox --version "$RELEASE_VERSION" --health-port "$HEALTH_PORT" --yes)
+  token_file=$(mktemp "$APP_ROOT/.token.XXXXXX")
+  chmod 600 "$token_file"
+  printf '%s\n' "$token" > "$token_file"
+  local args=(--mode "$mode" --panel "$PANEL_URL" --token-file "$token_file" --kernel singbox --version "$RELEASE_VERSION" --health-port "$HEALTH_PORT" --yes)
   if [[ $mode == machine ]]; then args+=(--machine-id "$ident"); else args+=(--node-id "$ident"); [[ -n "$node_type" ]] && args+=(--node-type "$node_type"); fi
   log "$role: 安装/升级 xboard-node（sing-box）"
-  bash "$installer" "${args[@]}"
+  if ! bash "$installer" "${args[@]}"; then
+    rm -f "$token_file"
+    return 1
+  fi
+  rm -f "$token_file"
   # The official installer already staged Claim credentials atomically. Keep
   # this final check as an acceptance gate; do not rewrite or expose secrets
   # after the service has started.

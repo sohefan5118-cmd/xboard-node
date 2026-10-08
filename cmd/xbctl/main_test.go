@@ -110,6 +110,9 @@ func TestConfigInitPreservesCredentialedInstancesAndAddsMachine(t *testing.T) {
 	if !strings.Contains(text, "machine_id: 6") || !strings.Contains(text, "machine_id: 8") {
 		t.Fatalf("merged config lost an instance:\n%s", text)
 	}
+	if got := strings.Count(text, "token_env:"); got != 2 {
+		t.Fatalf("merged config must contain one token_env per instance, got %d:\n%s", got, text)
+	}
 	stagedCred, err := os.ReadFile(filepath.Join(dir, "staged.env"))
 	if err != nil {
 		t.Fatal(err)
@@ -118,5 +121,34 @@ func TestConfigInitPreservesCredentialedInstancesAndAddsMachine(t *testing.T) {
 	if !strings.Contains(credText, "INSTANCE_PANEL_EXAMPLE_COM_MACHINE_6_MACHINE_TOKEN=old-token") ||
 		!strings.Contains(credText, "INSTANCE_PANEL_EXAMPLE_COM_MACHINE_8_MACHINE_TOKEN=new-token") {
 		t.Fatalf("merged credentials are incomplete:\n%s", credText)
+	}
+}
+
+func TestConfigInitReadsMachineTokenFromFile(t *testing.T) {
+	dir := t.TempDir()
+	tokenPath := filepath.Join(dir, "token")
+	if err := os.WriteFile(tokenPath, []byte("machine-file-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(dir, "config.yml")
+	credPath := filepath.Join(dir, "credentials.env")
+	if err := runConfigInit([]string{
+		"--mode", "machine",
+		"--output", configPath,
+		"--credentials-out", credPath,
+		"--panel-url", "https://panel.example.com",
+		"--machine-id", "8",
+		"--token-file", tokenPath,
+		"--install-root", dir,
+		"--version", "test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cred, err := os.ReadFile(credPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(cred), "=machine-file-token\n") {
+		t.Fatalf("token-file value was not staged: %s", cred)
 	}
 }
