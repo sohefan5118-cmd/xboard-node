@@ -1,5 +1,12 @@
 # Build stage
-FROM golang:1.26-alpine AS builder
+ARG TARGETOS
+ARG TARGETARCH
+ARG BUILDPLATFORM
+
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
+
+ARG TARGETOS
+ARG TARGETARCH
 
 RUN apk add --no-cache git
 
@@ -10,7 +17,7 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 go build -ldflags "-s -w \
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags "-s -w \
     -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev) \
     -X main.buildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     -tags "with_quic with_utls with_wireguard with_clash_api" \
