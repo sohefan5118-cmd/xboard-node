@@ -1386,14 +1386,12 @@ func runConfigInit(args []string) error {
 		seen := make(map[string]bool)
 		deduped := make([]config.Config, 0, len(instances))
 		for _, existing := range instances {
-			// A previous interrupted/hand-edited install can leave an instance
-			// whose token_env no longer exists in credentials.env. Such an
-			// instance cannot ever start, and retaining it makes adding a new
-			// instance fail validation for the whole process. Drop only these
-			// stale, credential-less instances; valid instances are preserved.
+			// Never silently drop an existing instance. That can turn a healthy
+			// multi-instance host into a partial deployment, and the resulting
+			// config may leave the service unable to start. Abort before writing
+			// either staged file so the caller can restore/provide credentials.
 			if !instanceHasCredential(existing, credentialsIn) {
-				fmt.Fprintf(os.Stderr, "warning: dropping stale instance %q without a usable token\n", existing.InstanceID)
-				continue
+				return fmt.Errorf("existing instance %q has no usable credential; refusing to remove it during merge", existing.InstanceID)
 			}
 			autoID, idErr := existing.AutoInstanceID()
 			if idErr == nil && autoID != "" {

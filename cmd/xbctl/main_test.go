@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestConfigInitDropsStaleMachineInstanceAndKeepsCredentials(t *testing.T) {
+func TestConfigInitRefusesStaleMachineInstanceWithoutMutatingFiles(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yml")
 	credPath := filepath.Join(dir, "credentials.env")
@@ -30,7 +30,15 @@ func TestConfigInitDropsStaleMachineInstanceAndKeepsCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := runConfigInit([]string{
+	originalConfig, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalCred, err := os.ReadFile(credPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = runConfigInit([]string{
 		"--mode", "machine",
 		"--config", cfgPath,
 		"--output", cfgPath,
@@ -43,35 +51,72 @@ func TestConfigInitDropsStaleMachineInstanceAndKeepsCredentials(t *testing.T) {
 		"--install-root", dir,
 		"--version", "test",
 	})
-	if err != nil {
-		t.Fatalf("runConfigInit: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "refusing to remove it") {
+		t.Fatalf("expected stale credential refusal, got %v", err)
 	}
-
-	root, err := loadWritableRootConfig(cfgPath)
-	if err != nil {
-		t.Fatalf("load output config: %v", err)
-	}
-	if got, want := len(root.Instances), 2; got != want {
-		t.Fatalf("instances after stale cleanup: got %d, want %d", got, want)
-	}
-	for _, inst := range root.Instances {
-		if inst.Machine != nil && inst.Machine.MachineID == 1 {
-			t.Fatalf("stale machine without credential was retained: %+v", inst)
-		}
-	}
-
-	cred, err := os.ReadFile(credPath)
+	gotConfig, err := os.ReadFile(cfgPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	credText := string(cred)
-	if !strings.Contains(credText, "old-token") {
-		t.Fatalf("existing credential was not preserved: %s", credText)
+	gotCred, err := os.ReadFile(credPath)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(credText, "new-token") {
-		t.Fatalf("new real token was not written: %s", credText)
+	if string(gotConfig) != string(originalConfig) || string(gotCred) != string(originalCred) {
+		t.Fatal("refused merge mutated config or credentials")
 	}
-	if strings.Contains(credText, "=***") {
-		t.Fatalf("redacted placeholder leaked into credentials: %s", credText)
+}
+
+func TestConfigInitPreservesCredentialedInstancesAndAddsMachine(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yml")
+	credPath := filepath.Join(dir, "credentials.env")
+	metaPath := filepath.Join(dir, "install-meta.json")
+
+	if err := os.WriteFile(cfgPath, []byte(`instances:
+  - panel:
+      url: "https://panel.example.com"
+    machine:
+      machine_id: 6
+      token_env: "INSTANCE_PANEL_EXAMPLE_COM_MACHINE_6_MACHINE_TOKEN"
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(credPath, []byte("INSTANCE_PANEL_EXAMPLE_COM_MACHINE_6_MACHINE_TOKEN=old-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runConfigInit([]string{
+		"--mode", "machine",
+		"--config", cfgPath,
+		"--output", filepath.Join(dir, "staged.yml"),
+		"--credentials-in", credPath,
+		"--credentials-out", filepath.Join(dir, "staged.env"),
+		"--meta", metaPath,
+		"--panel-url", "https://panel.example.com",
+		"--machine-id", "8",
+		"--token", "new-token",
+		"--install-root", dir,
+		"--version", "test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	stagedConfig, err := os.ReadFile(filepath.Join(dir, "staged.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(stagedConfig)
+	if !strings.Contains(text, "machine_id: 6") || !strings.Contains(text, "machine_id: 8") {
+		t.Fatalf("merged config lost an instance:\n%s", text)
+	}
+	stagedCred, err := os.ReadFile(filepath.Join(dir, "staged.env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	credText := string(stagedCred)
+	if !strings.Contains(credText, "INSTANCE_PANEL_EXAMPLE_COM_MACHINE_6_MACHINE_TOKEN=old-token") ||
+		!strings.Contains(credText, "INSTANCE_PANEL_EXAMPLE_COM_MACHINE_8_MACHINE_TOKEN=new-token") {
+		t.Fatalf("merged credentials are incomplete:\n%s", credText)
 	}
 }

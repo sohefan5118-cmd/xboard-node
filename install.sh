@@ -438,6 +438,10 @@ validate_install_request() {
         log_error "Token is required"
         exit 1
     fi
+    if [ "$TOKEN" = "***" ]; then
+        log_error "Token cannot be the redacted placeholder ***"
+        exit 1
+    fi
     if ! [[ "$HEALTH_PORT" =~ ^[0-9]+$ ]]; then
         log_error "health-port must be a non-negative integer"
         exit 1
@@ -640,11 +644,33 @@ render_config() {
 
     INSTANCE_ID=$(echo "$output" | grep '^INSTANCE_ID=' | cut -d= -f2-)
     render_device_claim_credentials
+    validate_staged_credentials
     chmod 600 "$TMP_DIR/credentials.env"
+}
+
+validate_staged_credentials() {
+    local key value missing=0
+    [ -s "$TMP_DIR/config.yml" ] || { log_error "Staged config is empty"; exit 1; }
+    [ -s "$TMP_DIR/credentials.env" ] || { log_error "Staged credentials are empty"; exit 1; }
+
+    # The service resolves panel/machine tokens through token_env. Check every
+    # generated reference before stopping the live service. This is the final
+    # guard against a stale/old xbctl or an installer that writes ***.
+    while IFS= read -r key; do
+        [ -n "$key" ] || continue
+        value=$(awk -F= -v wanted="$key" '$1 == wanted {sub(/^[^=]*=/, ""); print; exit}' "$TMP_DIR/credentials.env")
+        if [ -z "$value" ] || [ "$value" = "***" ]; then
+            log_error "Staged credentials missing usable value for token_env=${key}"
+            missing=1
+        fi
+    done < <(awk -F: '/token_env:/ {v=$2; gsub(/[[:space:]\"'"'"']/ , "", v); if (v != "") print v}' "$TMP_DIR/config.yml" | sort -u)
+    [ "$missing" -eq 0 ] || { log_error "Refusing to replace live installation with incomplete credentials"; exit 1; }
 }
 
 render_device_claim_credentials() {
     [ "$DEVICE_CLAIM_ENABLED" = true ] || return 0
+    [ -n "$DEVICE_CLAIM_PASSWORD" ] || { log_error "DEVICE_CLAIM_PASSWORD is empty"; exit 1; }
+    [ "$DEVICE_CLAIM_PASSWORD" != "***" ] || { log_error "DEVICE_CLAIM_PASSWORD cannot be the redacted placeholder ***"; exit 1; }
     local source="$TMP_DIR/credentials.env"
     local filtered="$TMP_DIR/credentials.env.claim"
     awk -F= '!/^(DEVICE_CLAIM_ENABLED|DEVICE_CLAIM_TYPE|DEVICE_CLAIM_ADDR|DEVICE_CLAIM_PASSWORD|DEVICE_CLAIM_DB|DEVICE_CLAIM_PREFIX|DEVICE_CLAIM_TTL)=/' "$source" > "$filtered"

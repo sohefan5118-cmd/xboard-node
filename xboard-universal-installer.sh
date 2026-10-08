@@ -70,7 +70,9 @@ source "$ENV_FILE"
 : "${CLAIM_TTL:=300}"
 : "${CLAIM_PREFIX:=xboard:device-claim}"
 : "${KERNEL_TYPE:=singbox}"
-: "${RELEASE_VERSION:=v1.13-ipv4}"
+# v1.13-ipv4 predates merge-safe multi-instance credentials. Keep the
+# installer and xbctl from the same merge-safe dev release together.
+: "${RELEASE_VERSION:=dev}"
 : "${HEALTH_PORT:=65530}"
 : "${SSH_USER:=root}"
 : "${A_HOST:=}"
@@ -97,6 +99,8 @@ source "$ENV_FILE"
 : "${NODE_ID:=}"
 : "${NODE_TOKEN:=}"
 : "${NODE_NODE_TYPE:=}"
+
+[[ -n "$REDIS_PASSWORD" && "$REDIS_PASSWORD" != "***" ]] || die 'REDIS_PASSWORD 不能为空且不能使用脱敏占位符'
 
 [[ $KERNEL_TYPE == singbox ]] || die '跨节点 device claim 强制要求 KERNEL_TYPE=singbox'
 [[ $CLAIM_TTL =~ ^[0-9]+$ && $CLAIM_TTL -ge 90 ]] || die 'CLAIM_TTL 必须是不小于 90 的整数'
@@ -172,11 +176,23 @@ install_node(){
   if ((CHECK_ONLY)); then
     log "$role: 预检查通过（不安装、不改配置）"; return
   fi
+  # Pass Claim settings through the protected environment so the official
+  # installer renders them into the staged credentials before first start.
+  # The values never enter argv or normal logs.
+  export DEVICE_CLAIM_ENABLED=true
+  export DEVICE_CLAIM_TYPE=redis
+  export DEVICE_CLAIM_ADDR="$REDIS_ADDR"
+  export DEVICE_CLAIM_PASSWORD="$REDIS_PASSWORD"
+  export DEVICE_CLAIM_DB=0
+  export DEVICE_CLAIM_PREFIX="$CLAIM_PREFIX"
+  export DEVICE_CLAIM_TTL="$CLAIM_TTL"
   local args=(--mode "$mode" --panel "$PANEL_URL" --token "$token" --kernel singbox --version "$RELEASE_VERSION" --health-port "$HEALTH_PORT" --yes)
   if [[ $mode == machine ]]; then args+=(--machine-id "$ident"); else args+=(--node-id "$ident"); [[ -n "$node_type" ]] && args+=(--node-type "$node_type"); fi
   log "$role: 安装/升级 xboard-node（sing-box）"
   bash "$installer" "${args[@]}"
-  atomic_claim_env
+  # The official installer already staged Claim credentials atomically. Keep
+  # this final check as an acceptance gate; do not rewrite or expose secrets
+  # after the service has started.
   chmod 600 "$APP_ROOT/credentials.env"
   systemctl daemon-reload
   systemctl restart xboard-node.service
@@ -203,7 +219,9 @@ remote_node(){
     *) role_token="";;
   esac
   {
-    printf 'PANEL_URL=%q\nREDIS_ADDR=%q\nREDIS_PASSWORD=%q\nCLAIM_TTL=%q\nCLAIM_PREFIX=%q\nKERNEL_TYPE=singbox\nRELEASE_VERSION=%q\nHEALTH_PORT=%q\nSSH_USER=%q\n' "$PANEL_URL" "$REDIS_ADDR" "$REDIS_PASSWORD" "$CLAIM_TTL" "$CLAIM_PREFIX" "$RELEASE_VERSION" "$HEALTH_PORT" "$SSH_USER"
+    printf 'PANEL_URL=%q\nREDIS_ADDR=%q\nREDIS_PASSWORD=%q\nDEVICE_CLAIM_ENABLED=true\nDEVICE_CLAIM_TYPE=redis\nDEVICE_CLAIM_ADDR=%q\nDEVICE_CLAIM_PASSWORD=%q\nDEVICE_CLAIM_DB=0\nDEVICE_CLAIM_PREFIX=%q\nDEVICE_CLAIM_TTL=%q\nKERNEL_TYPE=singbox\nRELEASE_VERSION=%q\nHEALTH_PORT=%q\nSSH_USER=%q\n' \
+      "$PANEL_URL" "$REDIS_ADDR" "$REDIS_PASSWORD" "$REDIS_ADDR" "$REDIS_PASSWORD" \
+      "$CLAIM_PREFIX" "$CLAIM_TTL" "$RELEASE_VERSION" "$HEALTH_PORT" "$SSH_USER"
     printf 'XBOARD_ROLE=%q\n%s_TOKEN=%q\n%s_MODE=%q\n%s_ID=%q\n%s_NODE_TYPE=%q\n' "$role" "$role" "$role_token" "$role" "$(node_mode_for "$role")" "$role" "$(node_id_for "$role")" "$role" "$(node_type_for "$role")"
   } >"$remote_env"
   need ssh; need scp
