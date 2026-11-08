@@ -406,13 +406,13 @@ install_dependencies() {
     case "$OS" in
         ubuntu|debian)
             DEBIAN_FRONTEND=noninteractive run_with_retry 10 3 apt-get update -qq
-            DEBIAN_FRONTEND=noninteractive run_with_retry 10 3 apt-get install -y -qq curl wget ca-certificates >/dev/null 2>&1
+            DEBIAN_FRONTEND=noninteractive run_with_retry 10 3 apt-get install -y -qq curl wget ca-certificates python3 >/dev/null 2>&1
             ;;
         centos|rhel|rocky|almalinux|fedora)
             if command -v dnf >/dev/null 2>&1; then
-                run_with_retry 5 3 dnf install -y -q curl wget ca-certificates >/dev/null 2>&1
+                run_with_retry 5 3 dnf install -y -q curl wget ca-certificates python3 >/dev/null 2>&1
             else
-                run_with_retry 5 3 yum install -y -q curl wget ca-certificates >/dev/null 2>&1
+                run_with_retry 5 3 yum install -y -q curl wget ca-certificates python3 >/dev/null 2>&1
             fi
             ;;
         *)
@@ -542,6 +542,62 @@ resolve_download_url() {
     fi
 }
 
+download_release_asset() {
+    local artifact="$1" destination="$2" api_url asset_id expected_sha
+    local api_json="${TMP_DIR}/${artifact}.release.json"
+    case "${ARCH}:${artifact}" in
+        amd64:xboard-node-linux-amd64) expected_sha="${NODE_SHA256_AMD64:-a1c5da9af4b4a8e4c6820b95ce34867a1490543436fb89e633d08c56a34d2b8e}" ;;
+        amd64:xbctl-linux-amd64) expected_sha="${XBCTL_SHA256_AMD64:-5a6c9928ff5db29cb4adb23ef90762980cddf27a7ff86b1f40b0ae0406081538}" ;;
+        *) log_error "No pinned checksum is available for ${artifact} on ${ARCH}"; return 1 ;;
+    esac
+    if [[ "$expected_sha" == RESTORE_* ]]; then
+        log_error "Release checksum for ${artifact} has not been configured"
+        return 1
+    fi
+    resolve_download_url "$artifact"
+    if curl -fSL --retry 2 --retry-delay 1 --max-time 120 "$DOWNLOAD_URL" -o "$destination"; then
+        :
+    else
+        log_warn "Direct release download failed; trying the GitHub asset API"
+        if [ "$RELEASE_VERSION" = latest ]; then
+            api_url="https://api.github.com/repos/sohefan5118-cmd/xboard-node/releases/latest"
+        else
+            api_url="https://api.github.com/repos/sohefan5118-cmd/xboard-node/releases/tags/${RELEASE_VERSION}"
+        fi
+        if ! curl -fsSL --retry 2 --retry-delay 1 --max-time 60 "$api_url" -o "$api_json"; then
+            log_error "Failed to retrieve release metadata for ${artifact}"
+            return 1
+        fi
+        asset_id=$(python3 - "$api_json" "$artifact" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as source:
+    release = json.load(source)
+for asset in release.get("assets", []):
+    if asset.get("name") == sys.argv[2] and asset.get("id"):
+        print(asset["id"])
+        break
+PY
+        ) || return 1
+        if [ -z "$asset_id" ]; then
+            log_error "Release asset not found: ${artifact}"
+            return 1
+        fi
+        if ! curl -fSL --retry 2 --retry-delay 1 --max-time 120 \
+            -H 'Accept: application/octet-stream' \
+            "https://api.github.com/repos/sohefan5118-cmd/xboard-node/releases/assets/${asset_id}" -o "$destination"; then
+            log_error "GitHub asset API download failed for ${artifact}"
+            return 1
+        fi
+    fi
+    local actual_sha
+    actual_sha=$(sha256sum "$destination" | awk '{print $1}')
+    if [ "$actual_sha" != "$expected_sha" ]; then
+        rm -f "$destination"
+        log_error "SHA-256 verification failed for ${artifact}"
+        return 1
+    fi
+}
+
 stage_binary() {
     local staged="$TMP_DIR/xboard-node"
     local local_src
@@ -550,10 +606,8 @@ stage_binary() {
         log_step "Using local binary: ${local_src}"
         cp "$local_src" "$staged"
     else
-        resolve_download_url "xboard-node-linux-${ARCH}"
-        log_step "Downloading binary: ${DOWNLOAD_URL}"
-        if ! curl -fsSL "$DOWNLOAD_URL" -o "$staged"; then
-            log_error "Failed to download binary from ${DOWNLOAD_URL}"
+        log_step "Downloading binary release asset"
+        if ! download_release_asset "xboard-node-linux-${ARCH}" "$staged"; then
             exit 1
         fi
     fi
@@ -582,10 +636,8 @@ stage_xbctl() {
         log_step "Using local xbctl binary: ${local_src}"
         cp "$local_src" "$staged"
     else
-        resolve_download_url "xbctl-linux-${ARCH}"
-        log_step "Downloading xbctl: ${DOWNLOAD_URL}"
-        if ! curl -fsSL "$DOWNLOAD_URL" -o "$staged"; then
-            log_error "Failed to download xbctl from ${DOWNLOAD_URL}"
+        log_step "Downloading xbctl release asset"
+        if ! download_release_asset "xbctl-linux-${ARCH}" "$staged"; then
             exit 1
         fi
     fi
@@ -982,4 +1034,6 @@ main() {
     esac
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

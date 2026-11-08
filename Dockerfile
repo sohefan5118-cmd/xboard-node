@@ -40,7 +40,7 @@ WORKDIR /etc/xboard-node
 #     -e apiHost=https://panel.example.com \
 #     -e apiKey=YOUR_TOKEN \
 #     -e nodeID=1 \
-#     ghcr.io/cedar2025/xboard-node:latest
+#     ghcr.io/sohefan5118-cmd/xboard-node:77fc2de1ea8f67e92cc42ea0d521b1b3d309c06a
 #
 # Supported env vars:
 #   apiHost  / API_HOST    → panel URL

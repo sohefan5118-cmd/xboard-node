@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -119,7 +120,7 @@ func TestConfigInitPreservesCredentialedInstancesAndAddsMachine(t *testing.T) {
 	}
 	credText := string(stagedCred)
 	if !strings.Contains(credText, "INSTANCE_PANEL_EXAMPLE_COM_MACHINE_6_MACHINE_TOKEN=old-token") ||
-		!strings.Contains(credText, "INSTANCE_PANEL_EXAMPLE_COM_MACHINE_8_MACHINE_TOKEN=new-token") {
+		!regexp.MustCompile(`(?m)^INSTANCE_PANEL_EXAMPLE_COM_MACHINE_8(?:_[A-F0-9]+)?_MACHINE_TOKEN=new-token$`).MatchString(credText) {
 		t.Fatalf("merged credentials are incomplete:\n%s", credText)
 	}
 }
