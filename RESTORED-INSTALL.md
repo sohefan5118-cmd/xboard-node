@@ -15,9 +15,13 @@ disabled; the preserved workflow can be explicitly dispatched by the owner.
 Download the installer, then run it using a machine token obtained from your panel:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sohefan5118-cmd/xboard-node/dev/install.sh -o /tmp/xboard-node-install.sh
+curl -fsSL https://raw.githubusercontent.com/sohefan5118-cmd/xboard-node/09cf31b62d667bbfc55124f5d691a571c090f8c7/install.sh -o /tmp/xboard-node-install.sh
 bash /tmp/xboard-node-install.sh --mode machine --panel https://panel.example.com --token-file /root/machine-token --machine-id 1
 ```
+
+Commit `09cf31b62d667bbfc55124f5d691a571c090f8c7` supports both a downloaded
+script and `curl | bash` execution. Pin this commit in generated panel commands;
+do not use a moving branch when installing production nodes.
 
 The installer downloads only from this owner's Release and GitHub API and verifies
 the pinned checksums. It preserves the existing multi-instance configuration merge

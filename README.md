@@ -35,11 +35,11 @@ docker compose up -d
 
 ```bash
 # Node mode
-curl -fsSL https://raw.githubusercontent.com/sohefan5118-cmd/xboard-node/dev/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/sohefan5118-cmd/xboard-node/09cf31b62d667bbfc55124f5d691a571c090f8c7/install.sh | \
   sudo bash -s -- --mode node --panel https://panel.example.com --token TOKEN --node-id 1
 
 # Machine mode
-curl -fsSL https://raw.githubusercontent.com/sohefan5118-cmd/xboard-node/dev/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/sohefan5118-cmd/xboard-node/09cf31b62d667bbfc55124f5d691a571c090f8c7/install.sh | \
   sudo bash -s -- --mode machine --panel https://panel.example.com --token TOKEN --machine-id 1
 
 ## xbctl
