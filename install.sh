@@ -585,8 +585,13 @@ PY
         if ! curl -fSL --retry 2 --retry-delay 1 --max-time 120 \
             -H 'Accept: application/octet-stream' \
             "https://api.github.com/repos/sohefan5118-cmd/xboard-node/releases/assets/${asset_id}" -o "$destination"; then
-            log_error "GitHub asset API download failed for ${artifact}"
-            return 1
+            if [ "$artifact" = xbctl-linux-amd64 ] && [ "$RELEASE_VERSION" = dev ]; then
+                log_warn "Asset API unavailable; trying pinned owner repository copy"
+                curl -fSL --retry 2 --max-time 120 "https://raw.githubusercontent.com/sohefan5118-cmd/xboard-node/dev/dist/${artifact}" -o "$destination" || return 1
+            else
+                log_error "GitHub asset API download failed for ${artifact}"
+                return 1
+            fi
         fi
     fi
     local actual_sha
